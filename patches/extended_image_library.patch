@@ -1,0 +1,121 @@
+diff -ruN /a/lib/src/network/network_image_io.dart /b/lib/src/network/network_image_io.dart
+--- /lib/src/network/network_image_io.dart	2025-11-20 19:19:48.045231963 +0800
++++ /lib/src/network/network_image_io.dart	2025-11-20 19:19:58.162318810 +0800
+@@ -1,5 +1,8 @@
+ import 'dart:async';
+ import 'dart:io';
++import 'package:cronet_http/cronet_http.dart';
++import 'package:http/http.dart';
++import 'package:http/io_client.dart';
+ import 'dart:ui' as ui show Codec;
+ import 'package:extended_image_library/src/extended_image_provider.dart';
+ import 'package:extended_image_library/src/platform.dart';
+@@ -228,34 +231,38 @@
+   ) async {
+     try {
+       final Uri resolved = Uri.base.resolve(key.url);
+-      final HttpClientResponse? response = await _tryGetResponse(resolved);
++      final StreamedResponse? response = await _tryGetResponse(resolved);
+       if (response == null || response.statusCode != HttpStatus.ok) {
+         if (response != null) {
+           // The network may be only temporarily unavailable, or the file will be
+           // added on the server later. Avoid having future calls to resolve
+           // fail to check the network again.
+-          await response.drain<List<int>>(<int>[]);
++          await response.stream.drain<List<int>>(<int>[]);
+         }
+         return null;
+       }
+ 
+-      final Uint8List bytes = await consolidateHttpClientResponseBytes(
+-        response,
+-        onBytesReceived: chunkEvents != null
+-            ? (int cumulative, int? total) {
+-                chunkEvents.add(ImageChunkEvent(
+-                  cumulativeBytesLoaded: cumulative,
+-                  expectedTotalBytes: total,
+-                ));
+-              }
+-            : null,
+-      );
+-      if (bytes.lengthInBytes == 0) {
++      final total = response.contentLength;
++      final buffer = BytesBuilder();
++      int received = 0;
++      await for (final chunk in response.stream) {
++        buffer.add(chunk);
++        received += chunk.length;
++
++        if (chunkEvents != null) {
++          chunkEvents.add(ImageChunkEvent(
++            cumulativeBytesLoaded: received,
++            expectedTotalBytes: total,
++          ));
++        }
++      }
++
++      if (buffer.length == 0) {
+         return Future<Uint8List>.error(
+             StateError('NetworkImage is an empty file: $resolved'));
+       }
+ 
+-      return bytes;
++      return buffer.takeBytes();
+     } on OperationCanceledError catch (_) {
+       if (printError) {
+         print('User cancel request $url.');
+@@ -279,26 +286,24 @@
+     return null;
+   }
+ 
+-  Future<HttpClientResponse> _getResponse(Uri resolved) async {
+-    final HttpClientRequest request = await httpClient.getUrl(resolved);
++  Future<StreamedResponse> _getResponse(Uri resolved) async {
++    var request = Request("GET", resolved);
+     headers?.forEach((String name, String value) {
+-      request.headers.add(name, value);
++      request.headers[name] = value;
+     });
+-    final HttpClientResponse response = await request.close();
++    var response = httpClient.send(request);
+     if (timeLimit != null) {
+-      response.timeout(
+-        timeLimit!,
+-      );
++      response = response.timeout(timeLimit!);
+     }
+     return response;
+   }
+ 
+   // Http get with cancel, delay try again
+-  Future<HttpClientResponse?> _tryGetResponse(
++  Future<StreamedResponse?> _tryGetResponse(
+     Uri resolved,
+   ) async {
+     cancelToken?.throwIfCancellationRequested();
+-    return await RetryHelper.tryRun<HttpClientResponse>(
++    return await RetryHelper.tryRun<StreamedResponse>(
+       () {
+         return CancellationTokenSource.register(
+           cancelToken,
+@@ -376,17 +381,9 @@
+   // We set `autoUncompress` to false to ensure that we can trust the value of
+   // the `Content-Length` HTTP header. We automatically uncompress the content
+   // in our call to [consolidateHttpClientResponseBytes].
+-  static final HttpClient _sharedHttpClient = HttpClient()
+-    ..autoUncompress = false;
++  static final Client _sharedHttpClient = CronetClient.defaultCronetEngine();
+ 
+-  static HttpClient get httpClient {
+-    HttpClient client = _sharedHttpClient;
+-    assert(() {
+-      if (debugNetworkImageHttpClientProvider != null) {
+-        client = debugNetworkImageHttpClientProvider!();
+-      }
+-      return true;
+-    }());
+-    return client;
++  static Client get httpClient {
++    return _sharedHttpClient;
+   }
+ }
