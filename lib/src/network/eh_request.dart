@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:native_dio_adapter/native_dio_adapter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_socks_proxy/socks_proxy.dart';
 import 'package:get/get_rx/src/rx_types/rx_types.dart';
@@ -57,6 +58,7 @@ class EHRequest with JHLifeCircleBeanErrorCatch implements JHLifeCircleBean {
       connectTimeout: Duration(milliseconds: networkSetting.connectTimeout.value),
       receiveTimeout: Duration(milliseconds: networkSetting.receiveTimeout.value),
     ));
+    _dio.httpClientAdapter = NativeAdapter();
 
     systemProxyAddress = await getSystemProxyAddress();
     await _initProxy();

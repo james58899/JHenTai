@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:native_dio_adapter/native_dio_adapter.dart';
 import 'package:get/get_rx/src/rx_workers/rx_workers.dart';
 import 'package:jhentai/src/config/jh_api_secret_config.dart';
 import 'package:jhentai/src/consts/jh_consts.dart';
@@ -24,6 +25,7 @@ class JHRequest with JHLifeCircleBeanErrorCatch implements JHLifeCircleBean {
       connectTimeout: Duration(milliseconds: networkSetting.connectTimeout.value),
       receiveTimeout: Duration(milliseconds: networkSetting.receiveTimeout.value),
     ));
+    _dio.httpClientAdapter = NativeAdapter();
 
     ever(networkSetting.connectTimeout, (_) {
       setConnectTimeout(networkSetting.connectTimeout.value);
